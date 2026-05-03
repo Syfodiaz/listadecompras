@@ -8,6 +8,11 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: #f5f5f5; padding: 1.5rem; max-width: 600px; margin: auto; }
     h1 { margin-bottom: 1rem; color: #333; }
+    .orcamento-container { background: white; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.75rem; box-shadow: 0 1px 4px rgba(0,0,0,0.1); display: flex; align-items: center; gap: 1rem; }
+    .orcamento-container label { font-weight: 600; color: #333; white-space: nowrap; }
+    .orcamento-container input { width: 120px; padding: 0.5rem; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
+    .saldo { background: white; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; box-shadow: 0 1px 4px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
+    .saldo span:last-child { color: #007bff; font-size: 1.2rem; }
     .subtotal { background: white; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; box-shadow: 0 1px 4px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: #333; }
     .subtotal span:last-child { color: #28a745; font-size: 1.3rem; }
     .form { display: flex; gap: 0.5rem; margin-bottom: 2rem; background: white; padding: 1rem; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
@@ -31,6 +36,19 @@
 <body>
   <h1>🛒 Lista de Compras</h1>
 
+  <!-- Orçamento -->
+  <div class="orcamento-container">
+    <label for="orcamento">💰 Orçamento:</label>
+    <input type="number" id="orcamento" placeholder="R$ 0,00" min="0" step="0.01">
+  </div>
+
+  <!-- Saldo (Orçamento - Subtotal) -->
+  <div class="saldo">
+    <span>Saldo restante:</span>
+    <span id="valorSaldo">R$ 0,00</span>
+  </div>
+
+  <!-- Subtotal -->
   <div class="subtotal">
     <span>Subtotal (Qtd × Preço):</span>
     <span id="valorSubtotal">R$ 0,00</span>
@@ -44,12 +62,19 @@
   <div id="lista"></div>
 
   <script>
+    // ----- DADOS -----
     const itens = JSON.parse(localStorage.getItem('compras') || '[]');
+    let orcamento = parseFloat(localStorage.getItem('orcamento')) || 0; // padrão 0 se vazio
 
-    function salvar() {
+    // ----- SALVAR -----
+    function salvarLista() {
       localStorage.setItem('compras', JSON.stringify(itens));
     }
+    function salvarOrcamento() {
+      localStorage.setItem('orcamento', orcamento);
+    }
 
+    // ----- FORMATAÇÃO DE DATA -----
     function formatarData(iso) {
       const d = new Date(iso);
       const hoje = new Date();
@@ -60,6 +85,7 @@
       return d.toLocaleDateString('pt-BR');
     }
 
+    // ----- AGRUPAMENTO -----
     function agruparPorData() {
       const grupos = {};
       itens.forEach(item => {
@@ -70,6 +96,7 @@
       return Object.entries(grupos).sort((a, b) => b[0].localeCompare(a[0]));
     }
 
+    // ----- CÁLCULOS -----
     function calcularSubtotal() {
       const total = itens.reduce((soma, item) => {
         const qtd = parseFloat(item.quantidade);
@@ -81,8 +108,26 @@
       }, 0);
       document.getElementById('valorSubtotal').textContent = 
         `R$ ${total.toFixed(2).replace('.', ',')}`;
+      return total;
     }
 
+    function atualizarSaldo() {
+      const subtotal = calcularSubtotal();
+      const orc = isNaN(orcamento) ? 0 : orcamento;
+      const saldo = orc - subtotal;
+      document.getElementById('valorSaldo').textContent = 
+        `R$ ${saldo.toFixed(2).replace('.', ',')}`;
+      // Destacar se negativo
+      document.getElementById('valorSaldo').style.color = saldo < 0 ? '#dc3545' : '#007bff';
+    }
+
+    function atualizarOrcamento(valor) {
+      orcamento = parseFloat(valor) || 0;
+      salvarOrcamento();
+      atualizarSaldo();
+    }
+
+    // ----- RENDERIZAÇÃO -----
     function renderizar() {
       const container = document.getElementById('lista');
       if (itens.length === 0) {
@@ -98,11 +143,9 @@
             const flagged = item.flagged;
             const expanded = item.expanded || false;
 
-            // Seta só aparece se o item estiver flagado
             const toggleBtn = flagged ? 
               `<button class="toggle-details-btn" data-action="toggle-details" data-index="${globalIndex}" title="${expanded ? 'Ocultar detalhes' : 'Mostrar detalhes'}">${expanded ? '▲' : '▼'}</button>` : '';
 
-            // Área de detalhes (inputs) – visível apenas se flagado E expandido
             const detailsHtml = (flagged && expanded) ? `
               <div class="item-details">
                 <span>📦 Qtd <input type="number" value="${qtd}" data-index="${globalIndex}" data-field="quantidade" placeholder="0" min="0" step="1"></span>
@@ -124,18 +167,16 @@
           return `<div class="date-group"><div class="date-label">${dataFormatada}</div>${itensHtml}</div>`;
         }).join('');
 
-        // Listeners para inputs de quantidade e preço
         container.querySelectorAll('.item-details input').forEach(input => {
           input.addEventListener('change', atualizarDetalhe);
           input.addEventListener('blur', atualizarDetalhe);
         });
 
-        // Listener para os botões de toggle (seta)
         container.querySelectorAll('.toggle-details-btn').forEach(btn => {
           btn.addEventListener('click', toggleDetails);
         });
       }
-      calcularSubtotal();
+      atualizarSaldo(); // Atualiza subtotal e saldo
     }
 
     function escapeHtml(texto) {
@@ -144,6 +185,7 @@
       return div.innerHTML;
     }
 
+    // ----- AÇÕES NOS DETALHES -----
     function atualizarDetalhe(e) {
       const idx = Number(e.target.dataset.index);
       const campo = e.target.dataset.field;
@@ -153,19 +195,19 @@
       } else if (campo === 'preco') {
         itens[idx].preco = valor === '' ? null : Number(valor).toFixed(2);
       }
-      salvar();
-      calcularSubtotal();
+      salvarLista();
+      atualizarSaldo(); // Recalcula subtotal e saldo
     }
 
     function toggleDetails(e) {
       const btn = e.currentTarget;
       const idx = Number(btn.dataset.index);
-      // Alterna o estado de expansão
       itens[idx].expanded = !itens[idx].expanded;
-      salvar();
-      renderizar(); // Re-renderiza para trocar a seta e mostrar/esconder inputs
+      salvarLista();
+      renderizar();
     }
 
+    // ----- ADICIONAR ITEM -----
     function adicionar() {
       const produto = document.getElementById('produto').value.trim();
       if (!produto) {
@@ -180,11 +222,23 @@
         flagged: false,
         expanded: false
       });
-      salvar();
+      salvarLista();
       renderizar();
       document.getElementById('produto').value = '';
     }
 
+    // ----- FLAG (CHECKBOX) -----
+    function flagItem(e) {
+      const idx = Number(e.target.dataset.index);
+      itens[idx].flagged = e.target.checked;
+      if (!e.target.checked) {
+        itens[idx].expanded = false; // recolhe ao desmarcar
+      }
+      salvarLista();
+      renderizar();
+    }
+
+    // ----- INICIALIZAÇÃO -----
     document.getElementById('adicionar').addEventListener('click', adicionar);
     document.addEventListener('keypress', e => {
       if (e.key === 'Enter' && document.activeElement?.tagName !== 'BUTTON') adicionar();
@@ -192,17 +246,22 @@
 
     document.getElementById('lista').addEventListener('change', e => {
       if (e.target.dataset.action === 'flag') {
-        const idx = Number(e.target.dataset.index);
-        itens[idx].flagged = e.target.checked;
-        // Se desmarcar, fecha também a expansão
-        if (!e.target.checked) {
-          itens[idx].expanded = false;
-        }
-        salvar();
-        renderizar();
+        flagItem(e);
       }
     });
 
+    // Orçamento: input e valor inicial
+    const inputOrcamento = document.getElementById('orcamento');
+    inputOrcamento.value = orcamento > 0 ? orcamento : '';
+    inputOrcamento.addEventListener('input', function() {
+      atualizarOrcamento(this.value);
+    });
+    // Também atualiza ao perder o foco (segurança)
+    inputOrcamento.addEventListener('blur', function() {
+      atualizarOrcamento(this.value);
+    });
+
+    // Renderiza tudo
     renderizar();
   </script>
 </body>
